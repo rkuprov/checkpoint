@@ -22,9 +22,7 @@ type testConfig struct {
 	headers     map[string]string
 	middlewares []func(http.Handler) http.Handler
 }
-
-// Check executes a test request against the provided handler with the given parameters
-func Check(
+type CheckFunc func(
 	ctx context.Context,
 	urlPath string,
 	urlPattern string,
@@ -33,72 +31,90 @@ func Check(
 	headers TestOption,
 	body string,
 	handler http.Handler,
-) (*Result, error) {
-	// Apply functional options
-	config := &testConfig{
-		headers:     make(map[string]string),
-		middlewares: []func(http.Handler) http.Handler{},
-	}
-	if headers != nil {
-		headers(config)
-	}
-	if middlewares != nil {
-		middlewares(config)
-	}
+) (*Result, error)
 
-	// Create request
-	req, err := http.NewRequestWithContext(ctx, method, urlPath, strings.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-
-	// Add headers to request
-	for key, value := range config.headers {
-		req.Header.Set(key, value)
-	}
-
-	// Apply middlewares to handler
-	finalHandler := handler
-	for i := len(config.middlewares) - 1; i >= 0; i-- {
-		finalHandler = config.middlewares[i](finalHandler)
-	}
-
-	// Create response recorder
-	rr := httptest.NewRecorder()
-
-	// Execute request
-	finalHandler.ServeHTTP(rr, req)
-
-	// Extract response headers
-	responseHeaders := make(map[string]string)
-	for key, values := range rr.Header() {
-		if len(values) > 0 {
-			responseHeaders[key] = strings.Join(values, ", ")
+func NewChecker[T Router](router T) CheckFunc {
+	return func(
+		ctx context.Context,
+		urlPath string,
+		urlPattern string,
+		middlewares TestOption,
+		method string,
+		headers TestOption,
+		body string,
+		handler http.Handler,
+	) (*Result, error) {
+		config := &testConfig{
+			headers:     make(map[string]string),
+			middlewares: []func(http.Handler) http.Handler{},
 		}
-	}
+		if headers != nil {
+			headers(config)
+		}
+		if middlewares != nil {
+			middlewares(config)
+		}
 
-	// Read response body
-	bodyBytes, err := io.ReadAll(rr.Body)
-	if err != nil {
-		return nil, err
-	}
+		// Create request
+		req, err := http.NewRequestWithContext(ctx, method, urlPath, strings.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
 
-	// Return result
-	result := &Result{
-		Headers:    responseHeaders,
-		StatusCode: rr.Code,
-		Body:       bodyBytes,
-	}
+		// Add headers to request
+		for key, value := range config.headers {
+			req.Header.Set(key, value)
+		}
 
-	return result, nil
+		// Apply middlewares to handler
+		finalHandler := handler
+		for i := len(config.middlewares) - 1; i >= 0; i-- {
+			finalHandler = config.middlewares[i](finalHandler)
+		}
+
+		// Create response recorder
+		rr := httptest.NewRecorder()
+
+		router.Handle(urlPattern, finalHandler)
+		router.ServeHTTP(rr, req)
+		// Extract response headers
+		responseHeaders := make(map[string]string)
+		for key, values := range rr.Header() {
+			if len(values) > 0 {
+				responseHeaders[key] = strings.Join(values, ", ")
+			}
+		}
+
+		// Read response body
+		bodyBytes, err := io.ReadAll(rr.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		// Return result
+		result := &Result{
+			Headers:    responseHeaders,
+			StatusCode: rr.Code,
+			Body:       bodyBytes,
+		}
+
+		return result, nil
+	}
 }
-
 func WithHeaders(headers ...TestOption) TestOption {
 	return func(config *testConfig) {
 		for _, addHeaderTo := range headers {
 			addHeaderTo(config)
 		}
 	}
+}
+
+func WithNoHeaders() TestOption {
+	return nil
+}
+
+func WithNoMiddlewares() TestOption {
+	return nil
 }
 
 // Header sets the headers for the request

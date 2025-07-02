@@ -2,11 +2,14 @@ package checkpoint
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -30,14 +33,15 @@ func Test_RunBodyPassthrough(t *testing.T) {
 		_, _ = w.Write(bytes)
 	})
 
+	check := NewChecker(http.NewServeMux())
 	// Check the test
-	result, err := Check(
+	result, err := check(
 		ctx,
 		urlPath,
 		urlPattern,
-		nil,
+		WithNoHeaders(),
 		method,
-		nil,
+		WithNoHeaders(),
 		body,
 		handler)
 	if err != nil {
@@ -69,7 +73,9 @@ func Test_RunWithHeadersPassthrough(t *testing.T) {
 	})
 
 	// Check the test with headers
-	result, err := Check(
+	check := NewChecker(http.NewServeMux())
+	// Check the test
+	result, err := check(
 		ctx,
 		urlPath,
 		urlPattern,
@@ -77,18 +83,17 @@ func Test_RunWithHeadersPassthrough(t *testing.T) {
 			Header("X-Test-Header", "TestValue"),
 		),
 		method,
-		nil,
+		WithNoMiddlewares(),
 		body,
 		handler)
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
 
-	if result.StatusCode != http.StatusOK {
-		t.Errorf("Expected status code %d, got %d", http.StatusOK, result.StatusCode)
-	}
-
-	assert.Equal(t, "TestValue", result.Headers["X-Test-Header"], "Expected header X-Test-Header to be 'TestValue'")
+	assert.Equal(t, http.StatusOK, result.StatusCode,
+		"Expected status code %d, got %d", http.StatusOK, result.StatusCode)
+	assert.Equal(t, "TestValue", result.Headers["X-Test-Header"],
+		"Expected header X-Test-Header to be 'TestValue'")
 }
 
 func Test_RunWithMiddlewares(t *testing.T) {
@@ -116,7 +121,10 @@ func Test_RunWithMiddlewares(t *testing.T) {
 	}
 
 	// Check the test with middleware
-	result, err := Check(
+	check := NewChecker(http.NewServeMux())
+	// Check the test
+	result, err := check(
+
 		ctx,
 		urlPath,
 		urlPattern,
@@ -168,7 +176,10 @@ func Test_RunWithMiddlewaresStacked(t *testing.T) {
 	}
 
 	// Check the test with multiple middlewares
-	result, err := Check(
+	check := NewChecker(http.NewServeMux())
+	// Check the test
+	result, err := check(
+
 		ctx,
 		urlPath,
 		urlPattern,
@@ -177,7 +188,7 @@ func Test_RunWithMiddlewaresStacked(t *testing.T) {
 			middleware2,
 		),
 		method,
-		nil,
+		WithNoHeaders(),
 		body,
 		handler)
 	if err != nil {
@@ -214,13 +225,15 @@ func Test_RunWithMiddlewaresError(t *testing.T) {
 	}
 
 	// Check the test with middleware that returns an error
-	result, err := Check(
+	check := NewChecker(http.NewServeMux())
+	result, err := check(
+
 		ctx,
 		urlPath,
 		urlPattern,
 		WithMiddlewares(middleware),
 		method,
-		nil,
+		WithNoHeaders(),
 		body,
 		handler)
 	if err != nil {
@@ -228,4 +241,69 @@ func Test_RunWithMiddlewaresError(t *testing.T) {
 	}
 
 	assert.Equal(t, http.StatusInternalServerError, result.StatusCode)
+}
+
+func Test_RunWithPathParameters(t *testing.T) {
+	ctx := context.Background()
+	urlPath := "/test/123"
+	urlPattern := "/test/{id}"
+	method := "GET"
+	body := ""
+
+	tc := []struct {
+		router    Router
+		parseFunc func(*http.Request) string
+	}{
+		{
+			router: http.NewServeMux(),
+			parseFunc: func(r *http.Request) string {
+				return r.PathValue("id")
+			},
+		},
+		{
+			router: chi.NewRouter(),
+			parseFunc: func(r *http.Request) string {
+				return chi.URLParam(r, "id")
+			},
+		},
+		{
+			router: &RouterAdapter{mux.NewRouter()},
+			parseFunc: func(r *http.Request) string {
+				vars := mux.Vars(r)
+				if id, ok := vars["id"]; ok {
+					return id
+				}
+				return ""
+			},
+		},
+	}
+
+	for i, test := range tc {
+		check := NewChecker(test.router)
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			id := test.parseFunc(r)
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprintf(w, `{"id": "%s"}`, id)
+		})
+		result, err := check(
+			ctx,
+			urlPath,
+			urlPattern,
+			nil,
+			method,
+			nil,
+			body,
+			handler)
+		if err != nil {
+			t.Fatalf("Check failed: %v", err)
+		}
+
+		if result.StatusCode != http.StatusOK {
+			t.Errorf("Expected status code %d, got %d", http.StatusOK, result.StatusCode)
+		}
+
+		assert.Equal(t, `{"id": "123"}`, string(result.Body),
+			"failure in the test case: %d", i)
+	}
 }
