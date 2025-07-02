@@ -1,21 +1,19 @@
 # checkpoint
 
-Checkpoint is package meant to ease the testing of REST APIs handlers. 
+Checkpoint is package meant to assist in running integration testing of REST APIs handlers. It provides a way to construct an HTTP requests along including middleware and evaluate the resulting response.
 
-The Test method accepts the following parameters that allow you to customize the shape of the request and the expected response.
-The function accepts the following parameters:
-- a context 
-- a URL path, including query parameters
-- a URL pattern
-- a collection of headers
-- a collection of middlewares
-- a request method
-- a handler function.
-- a request body
+Because url query and path parameters tend to be implemented differently by different routers, the Check function needs to be initialized with the router you're intending to use. For this reason a Router interface was introduced that implements two methods:
+* ServerHTTP(w http.ResponseWriter, r *http.Request)
+* Handle(pattern string, handler *http.Handler)
 
-It outputs a Result struct, which contains the following fields:
-- Headers: map[string]string
-- StatusCode: int
-- Body: []byte
+Fulfilling this interface allows parsing of query and path parameters.
 
-as well as the error, if any.
+Some routers, such as one provided by `github.com/gorilla/mux` do not match the Router interface exactly, so an adapter must be used (see router.go).
+The list of implemented routers is here:
+
+**Work out of the box**
+* Stdlib's `http.ServeMux`
+* `chi`
+
+**Works with the adapter**
+* `gorilla`'s mux.
