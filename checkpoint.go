@@ -2,6 +2,7 @@ package checkpoint
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -21,42 +22,89 @@ type TestOption func(config *testConfig)
 type testConfig struct {
 	headers     map[string]string
 	middlewares []func(http.Handler) http.Handler
+	urlPath     string
+	urlPattern  string
+	method      string
+	body        string
 }
+
+type HeaderFunc func() (string, string)
+
+func WithHeaders(headers ...HeaderFunc) TestOption {
+	return func(config *testConfig) {
+		if config.headers == nil {
+			config.headers = make(map[string]string)
+		}
+		for _, h := range headers {
+			k, v := h()
+			config.headers[k] = v
+		}
+	}
+}
+
+func Header(key string, value string) HeaderFunc {
+	return func() (string, string) {
+		return key, value
+	}
+}
+
+func WithMiddlewares(middlewares ...func(http.Handler) http.Handler) TestOption {
+	return func(config *testConfig) {
+		config.middlewares = append(config.middlewares, middlewares...)
+	}
+}
+
+func WithURLPath(urlPath string) TestOption {
+	return func(config *testConfig) {
+		config.urlPath = urlPath
+	}
+}
+
+func WithURLPattern(urlPattern string) TestOption {
+	return func(config *testConfig) {
+		config.urlPattern = urlPattern
+	}
+}
+
+func WithMethod(method string) TestOption {
+	return func(config *testConfig) {
+		config.method = method
+	}
+}
+
+func WithBody(body string) TestOption {
+	return func(config *testConfig) {
+		config.body = body
+	}
+}
+
 type CheckFunc func(
 	ctx context.Context,
-	urlPath string,
-	urlPattern string,
-	middlewares TestOption,
-	method string,
-	headers TestOption,
-	body string,
 	handler http.Handler,
+	options ...TestOption,
 ) (*Result, error)
 
 func NewChecker[T Router](router T) CheckFunc {
 	return func(
 		ctx context.Context,
-		urlPath string,
-		urlPattern string,
-		middlewares TestOption,
-		method string,
-		headers TestOption,
-		body string,
 		handler http.Handler,
+		options ...TestOption,
 	) (*Result, error) {
 		config := &testConfig{
 			headers:     make(map[string]string),
 			middlewares: []func(http.Handler) http.Handler{},
-		}
-		if headers != nil {
-			headers(config)
-		}
-		if middlewares != nil {
-			middlewares(config)
+			method:      "GET", // default method
 		}
 
+		// Apply all options
+		for _, option := range options {
+			option(config)
+		}
+		if config.urlPath == "" {
+			return nil, errors.New("url path cannot be empty")
+		}
 		// Create request
-		req, err := http.NewRequestWithContext(ctx, method, urlPath, strings.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, config.method, config.urlPath, strings.NewReader(config.body))
 		if err != nil {
 			return nil, err
 		}
@@ -75,7 +123,7 @@ func NewChecker[T Router](router T) CheckFunc {
 		// Create response recorder
 		rr := httptest.NewRecorder()
 
-		router.Handle(urlPattern, finalHandler)
+		router.Handle(config.urlPattern, finalHandler)
 		router.ServeHTTP(rr, req)
 		// Extract response headers
 		responseHeaders := make(map[string]string)
@@ -99,36 +147,5 @@ func NewChecker[T Router](router T) CheckFunc {
 		}
 
 		return result, nil
-	}
-}
-func WithHeaders(headers ...TestOption) TestOption {
-	return func(config *testConfig) {
-		for _, addHeaderTo := range headers {
-			addHeaderTo(config)
-		}
-	}
-}
-
-func WithNoHeaders() TestOption {
-	return nil
-}
-
-func WithNoMiddlewares() TestOption {
-	return nil
-}
-
-// Header sets the headers for the request
-func Header(key, value string) TestOption {
-	return func(config *testConfig) {
-		config.headers[key] = value
-	}
-}
-
-// WithMiddlewares sets the middlewares to be applied to the handler
-func WithMiddlewares(middlewares ...func(http.Handler) http.Handler) TestOption {
-	return func(config *testConfig) {
-		for _, middleware := range middlewares {
-			config.middlewares = append(config.middlewares, middleware)
-		}
 	}
 }
