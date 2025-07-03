@@ -1,7 +1,12 @@
 # checkpoint
 
+### Description
 Checkpoint is package meant to assist in running integration testing of REST APIs handlers. It provides a way to construct an HTTP requests along including middleware and evaluate the resulting response.
 
+### Installation
+```go get github.com/rkuprov/checkpoint@latest```
+
+### How to use
 Because url query and path parameters tend to be implemented differently by different routers, the Check function needs to be initialized with the router you're intending to use. For this reason a Router interface was introduced that implements two methods:
 * ServerHTTP(w http.ResponseWriter, r *http.Request)
 * Handle(pattern string, handler *http.Handler)
