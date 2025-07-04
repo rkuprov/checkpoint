@@ -123,6 +123,10 @@ func NewChecker[T Router](router T) CheckFunc {
 		// Create response recorder
 		rr := httptest.NewRecorder()
 
+		if config.urlPattern == "" {
+			config.urlPattern = config.urlPath
+		}
+
 		router.Handle(config.urlPattern, finalHandler)
 		router.ServeHTTP(rr, req)
 		// Extract response headers
