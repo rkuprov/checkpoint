@@ -9,147 +9,135 @@ import (
 	"strings"
 )
 
-// Result represents the response from a test execution
+type Body []byte
 type Result struct {
 	Headers    map[string]string
 	StatusCode int
-	Body       []byte
+	Body       Body
 }
 
-type TestOption func(config *testConfig)
-
-// testConfig holds the configuration for the Test function
-type testConfig struct {
-	headers     map[string]string
-	middlewares []func(http.Handler) http.Handler
-	urlPath     string
-	urlPattern  string
-	method      string
-	body        string
+// TestConfig holds the configuration for the Test function
+type TestConfig struct {
+	router      Router                                   // Required
+	RouteFunc   func(http.ResponseWriter, *http.Request) // Required
+	Path        string                                   // Required
+	Headers     map[string]string                        // Nullable
+	Middlewares []func(http.Handler) http.Handler        // Nullable
+	URLPattern  *string                                  // Nullable
+	Method      *string                                  // Nullable
+	Body        *string                                  // Nullable
 }
 
 type HeaderFunc func() (string, string)
 
-func WithHeaders(headers ...HeaderFunc) TestOption {
-	return func(config *testConfig) {
-		if config.headers == nil {
-			config.headers = make(map[string]string)
-		}
-		for _, h := range headers {
-			k, v := h()
-			config.headers[k] = v
-		}
+// WithHeaders adds headers to the TestConfig
+func (tc *TestConfig) WithHeaders(headers ...HeaderFunc) *TestConfig {
+	if tc.Headers == nil {
+		tc.Headers = make(map[string]string)
 	}
+	for _, h := range headers {
+		k, v := h()
+		tc.Headers[k] = v
+	}
+	return tc
 }
 
+// Header creates a HeaderFunc
 func Header(key string, value string) HeaderFunc {
 	return func() (string, string) {
 		return key, value
 	}
 }
 
-func WithMiddlewares(middlewares ...func(http.Handler) http.Handler) TestOption {
-	return func(config *testConfig) {
-		config.middlewares = append(config.middlewares, middlewares...)
-	}
+// WithMiddlewares adds middlewares to the TestConfig
+func (tc *TestConfig) WithMiddlewares(middlewares ...func(http.Handler) http.Handler) *TestConfig {
+	tc.Middlewares = append(tc.Middlewares, middlewares...)
+	return tc
 }
 
-func WithURLPath(urlPath string) TestOption {
-	return func(config *testConfig) {
-		config.urlPath = urlPath
+// Run executes the test with the current configuration
+func (tc *TestConfig) Run(ctx context.Context) (*Result, error) {
+	// Validate required fields
+	if tc.RouteFunc == nil {
+		return nil, errors.New("handler cannot be nil")
 	}
-}
-
-func WithURLPattern(urlPattern string) TestOption {
-	return func(config *testConfig) {
-		config.urlPattern = urlPattern
+	if tc.Path == "" {
+		return nil, errors.New("path cannot be empty")
 	}
-}
 
-func WithMethod(method string) TestOption {
-	return func(config *testConfig) {
-		config.method = method
+	// Set defaults for nullable fields
+	method := "GET"
+	if tc.Method != nil {
+		method = *tc.Method
 	}
-}
 
-func WithBody(body string) TestOption {
-	return func(config *testConfig) {
-		config.body = body
+	body := ""
+	if tc.Body != nil {
+		body = *tc.Body
 	}
-}
 
-type CheckFunc func(
-	ctx context.Context,
-	handler http.Handler,
-	options ...TestOption,
-) (*Result, error)
+	// Create request
+	req, err := http.NewRequestWithContext(ctx, method, tc.Path, strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
 
-func NewChecker[T Router](router T) CheckFunc {
-	return func(
-		ctx context.Context,
-		handler http.Handler,
-		options ...TestOption,
-	) (*Result, error) {
-		config := &testConfig{
-			headers:     make(map[string]string),
-			middlewares: []func(http.Handler) http.Handler{},
-			method:      "GET", // default method
-		}
-
-		// Apply all options
-		for _, option := range options {
-			option(config)
-		}
-		if config.urlPath == "" {
-			return nil, errors.New("url path cannot be empty")
-		}
-		// Create request
-		req, err := http.NewRequestWithContext(ctx, config.method, config.urlPath, strings.NewReader(config.body))
-		if err != nil {
-			return nil, err
-		}
-
-		// Add headers to request
-		for key, value := range config.headers {
+	// Add headers to request
+	if len(tc.Headers) > 0 {
+		for key, value := range tc.Headers {
 			req.Header.Set(key, value)
 		}
-
-		// Apply middlewares to handler
-		finalHandler := handler
-		for i := len(config.middlewares) - 1; i >= 0; i-- {
-			finalHandler = config.middlewares[i](finalHandler)
-		}
-
-		// Create response recorder
-		rr := httptest.NewRecorder()
-
-		if config.urlPattern == "" {
-			config.urlPattern = config.urlPath
-		}
-
-		router.Handle(config.urlPattern, finalHandler)
-		router.ServeHTTP(rr, req)
-		// Extract response headers
-		responseHeaders := make(map[string]string)
-		for key, values := range rr.Header() {
-			if len(values) > 0 {
-				responseHeaders[key] = strings.Join(values, ", ")
-			}
-		}
-
-		// Read response body
-		bodyBytes, err := io.ReadAll(rr.Body)
-		if err != nil {
-			return nil, err
-		}
-
-		// Return result
-		result := &Result{
-			Headers:    responseHeaders,
-			StatusCode: rr.Code,
-			Body:       bodyBytes,
-		}
-
-		return result, nil
 	}
+
+	// Apply middlewares to handler
+	finalHandler := http.Handler(http.HandlerFunc(tc.RouteFunc))
+	if len(tc.Middlewares) > 0 {
+		for i := len(tc.Middlewares) - 1; i >= 0; i-- {
+			finalHandler = tc.Middlewares[i](finalHandler)
+		}
+	}
+
+	// Create response recorder
+	rr := httptest.NewRecorder()
+
+	urlPattern := tc.Path
+	if tc.URLPattern != nil {
+		urlPattern = *tc.URLPattern
+	}
+	tc.router.Handle(urlPattern, finalHandler)
+	tc.router.ServeHTTP(rr, req)
+
+	// Extract response headers
+	responseHeaders := make(map[string]string)
+	for key, values := range rr.Header() {
+		if len(values) > 0 {
+			responseHeaders[key] = strings.Join(values, ", ")
+		}
+	}
+
+	// Read response body
+	bodyBytes, err := io.ReadAll(rr.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Result{
+		Headers:    responseHeaders,
+		StatusCode: rr.Code,
+		Body:       bodyBytes,
+	}, nil
+}
+
+// Init creates a new TestConfig with a given router
+func Init(r Router) *TestConfig {
+	return &TestConfig{
+		router: r,
+	}
+}
+
+func (b Body) String() string {
+	if len(b) == 0 {
+		return ""
+	}
+	return string(b)
 }

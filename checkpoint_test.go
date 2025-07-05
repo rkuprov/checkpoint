@@ -16,7 +16,6 @@ import (
 func Test_RunBodyPassthrough(t *testing.T) {
 	ctx := context.Background()
 	urlPath := "/test"
-	urlPattern := "/test"
 	method := "GET"
 	body := "request body content"
 
@@ -33,16 +32,14 @@ func Test_RunBodyPassthrough(t *testing.T) {
 		_, _ = w.Write(bytes)
 	})
 
-	check := NewChecker(http.NewServeMux())
+	conf := Init(http.NewServeMux())
 	// Check the test
-	result, err := check(
-		ctx,
-		handler,
-		WithURLPath(urlPath),
-		WithURLPattern(urlPattern),
-		WithMethod(method),
-		WithBody(body),
-	)
+	conf.RouteFunc = handler
+	conf.Path = urlPath
+	conf.Method = &method
+	conf.Body = &body
+
+	result, err := conf.Run(ctx)
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -71,18 +68,15 @@ func Test_RunWithHeadersPassthrough(t *testing.T) {
 	})
 
 	// Check the test with headers
-	check := NewChecker(http.NewServeMux())
+	conf := Init(http.NewServeMux())
+	conf.RouteFunc = handler
+	conf.Path = urlPath
+	conf.URLPattern = &urlPattern
+	conf.WithHeaders(
+		Header("X-Test-Header", "TestValue"))
+	conf.Body = &body
 	// Check the test
-	result, err := check(
-		ctx,
-		handler,
-		WithURLPath(urlPath),
-		WithURLPattern(urlPattern),
-		WithHeaders(
-			Header("X-Test-Header", "TestValue"),
-		),
-		WithBody(body),
-	)
+	result, err := conf.Run(ctx)
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -117,16 +111,14 @@ func Test_RunWithMiddlewares(t *testing.T) {
 	}
 
 	// Check the test with middleware
-	check := NewChecker(http.NewServeMux())
+	conf := Init(http.NewServeMux())
 	// Check the test
-	result, err := check(
-		ctx,
-		handler,
-		WithURLPath(urlPath),
-		WithURLPattern(urlPattern),
-		WithMiddlewares(middleware),
-		WithBody(body),
-	)
+	conf.RouteFunc = handler
+	conf.Path = urlPath
+	conf.URLPattern = &urlPattern
+	conf.WithMiddlewares(middleware)
+	conf.Body = &body
+	result, err := conf.Run(ctx)
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -169,19 +161,17 @@ func Test_RunWithMiddlewaresStacked(t *testing.T) {
 	}
 
 	// Check the test with multiple middlewares
-	check := NewChecker(http.NewServeMux())
+	conf := Init(http.NewServeMux())
 	// Check the test
-	result, err := check(
-		ctx,
-		handler,
-		WithURLPath(urlPath),
-		WithURLPattern(urlPattern),
-		WithMiddlewares(
-			middleware1,
-			middleware2,
-		),
-		WithBody(body),
+	conf.RouteFunc = handler
+	conf.Path = urlPath
+	conf.URLPattern = &urlPattern
+	conf.WithMiddlewares(
+		middleware1,
+		middleware2,
 	)
+	conf.Body = &body
+	result, err := conf.Run(ctx)
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -215,15 +205,13 @@ func Test_RunWithMiddlewaresError(t *testing.T) {
 	}
 
 	// Check the test with middleware that returns an error
-	check := NewChecker(http.NewServeMux())
-	result, err := check(
-		ctx,
-		handler,
-		WithURLPath(urlPath),
-		WithURLPattern(urlPattern),
-		WithMiddlewares(middleware),
-		WithBody(body),
-	)
+	conf := Init(http.NewServeMux())
+	conf.RouteFunc = handler
+	conf.Path = urlPath
+	conf.URLPattern = &urlPattern
+	conf.WithMiddlewares(middleware)
+	conf.Body = &body
+	result, err := conf.Run(ctx)
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
 	}
@@ -265,19 +253,18 @@ func Test_RunWithPathParameters(t *testing.T) {
 	}
 
 	for i, test := range tc {
-		check := NewChecker(test.router)
+		conf := Init(test.router)
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			id := test.parseFunc(r)
 			w.WriteHeader(http.StatusOK)
 			_, _ = fmt.Fprintf(w, `{"id": "%s"}`, id)
 		})
-		result, err := check(
-			ctx,
-			handler,
-			WithURLPath(urlPath),
-			WithURLPattern(urlPattern),
-		)
+		conf.RouteFunc = handler
+		conf.Path = urlPath
+		conf.URLPattern = &urlPattern
+
+		result, err := conf.Run(ctx)
 		if err != nil {
 			t.Fatalf("Check failed: %v", err)
 		}
