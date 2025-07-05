@@ -21,11 +21,11 @@ type TestConfig struct {
 	router      Router                                   // Required
 	RouteFunc   func(http.ResponseWriter, *http.Request) // Required
 	Path        string                                   // Required
-	Headers     map[string]string                        // Nullable
-	Middlewares []func(http.Handler) http.Handler        // Nullable
-	URLPattern  *string                                  // Nullable
-	Method      *string                                  // Nullable
-	Body        *string                                  // Nullable
+	Headers     map[string]string                        // Optional
+	Middlewares []func(http.Handler) http.Handler        // Optional
+	URLPattern  string                                   // Optional
+	Method      string                                   // Optional
+	Body        string                                   // Optional
 }
 
 type HeaderFunc func() (string, string)
@@ -65,15 +65,15 @@ func (tc *TestConfig) Run(ctx context.Context) (*Result, error) {
 		return nil, errors.New("path cannot be empty")
 	}
 
-	// Set defaults for nullable fields
+	// Set defaults for optional fields
 	method := "GET"
-	if tc.Method != nil {
-		method = *tc.Method
+	if tc.Method != "" {
+		method = tc.Method
 	}
 
 	body := ""
-	if tc.Body != nil {
-		body = *tc.Body
+	if tc.Body != "" {
+		body = tc.Body
 	}
 
 	// Create request
@@ -89,11 +89,11 @@ func (tc *TestConfig) Run(ctx context.Context) (*Result, error) {
 		}
 	}
 
-	// Apply middlewares to handler
-	finalHandler := http.Handler(http.HandlerFunc(tc.RouteFunc))
+	// Apply middlewares to handler in reverse order because they were
+	handler := http.Handler(http.HandlerFunc(tc.RouteFunc))
 	if len(tc.Middlewares) > 0 {
 		for i := len(tc.Middlewares) - 1; i >= 0; i-- {
-			finalHandler = tc.Middlewares[i](finalHandler)
+			handler = tc.Middlewares[i](handler)
 		}
 	}
 
@@ -101,10 +101,10 @@ func (tc *TestConfig) Run(ctx context.Context) (*Result, error) {
 	rr := httptest.NewRecorder()
 
 	urlPattern := tc.Path
-	if tc.URLPattern != nil {
-		urlPattern = *tc.URLPattern
+	if tc.URLPattern != "" {
+		urlPattern = tc.URLPattern
 	}
-	tc.router.Handle(urlPattern, finalHandler)
+	tc.router.Handle(urlPattern, handler)
 	tc.router.ServeHTTP(rr, req)
 
 	// Extract response headers

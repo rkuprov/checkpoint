@@ -36,8 +36,8 @@ func Test_RunBodyPassthrough(t *testing.T) {
 	// Check the test
 	conf.RouteFunc = handler
 	conf.Path = urlPath
-	conf.Method = &method
-	conf.Body = &body
+	conf.Method = method
+	conf.Body = body
 
 	result, err := conf.Run(ctx)
 	if err != nil {
@@ -71,10 +71,10 @@ func Test_RunWithHeadersPassthrough(t *testing.T) {
 	conf := Init(http.NewServeMux())
 	conf.RouteFunc = handler
 	conf.Path = urlPath
-	conf.URLPattern = &urlPattern
+	conf.URLPattern = urlPattern
 	conf.WithHeaders(
 		Header("X-Test-Header", "TestValue"))
-	conf.Body = &body
+	conf.Body = body
 	// Check the test
 	result, err := conf.Run(ctx)
 	if err != nil {
@@ -115,9 +115,9 @@ func Test_RunWithMiddlewares(t *testing.T) {
 	// Check the test
 	conf.RouteFunc = handler
 	conf.Path = urlPath
-	conf.URLPattern = &urlPattern
+	conf.URLPattern = urlPattern
 	conf.WithMiddlewares(middleware)
-	conf.Body = &body
+	conf.Body = body
 	result, err := conf.Run(ctx)
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
@@ -165,12 +165,12 @@ func Test_RunWithMiddlewaresStacked(t *testing.T) {
 	// Check the test
 	conf.RouteFunc = handler
 	conf.Path = urlPath
-	conf.URLPattern = &urlPattern
+	conf.URLPattern = urlPattern
 	conf.WithMiddlewares(
 		middleware1,
 		middleware2,
 	)
-	conf.Body = &body
+	conf.Body = body
 	result, err := conf.Run(ctx)
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
@@ -208,9 +208,9 @@ func Test_RunWithMiddlewaresError(t *testing.T) {
 	conf := Init(http.NewServeMux())
 	conf.RouteFunc = handler
 	conf.Path = urlPath
-	conf.URLPattern = &urlPattern
+	conf.URLPattern = urlPattern
 	conf.WithMiddlewares(middleware)
-	conf.Body = &body
+	conf.Body = body
 	result, err := conf.Run(ctx)
 	if err != nil {
 		t.Fatalf("Check failed: %v", err)
@@ -262,7 +262,7 @@ func Test_RunWithPathParameters(t *testing.T) {
 		})
 		conf.RouteFunc = handler
 		conf.Path = urlPath
-		conf.URLPattern = &urlPattern
+		conf.URLPattern = urlPattern
 
 		result, err := conf.Run(ctx)
 		if err != nil {
