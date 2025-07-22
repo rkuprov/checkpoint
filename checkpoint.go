@@ -25,7 +25,12 @@ type TestConfig struct {
 	Middlewares []func(http.Handler) http.Handler        // Optional
 	URLPattern  string                                   // Optional
 	Method      string                                   // Optional
-	Body        string                                   // Optional
+	Body        io.ReadCloser
+}
+
+// SetBodyString is a convenience method to set the Body field as a string
+func (tc *TestConfig) SetBodyString(body string) {
+	tc.Body = io.NopCloser(strings.NewReader(body))
 }
 
 type HeaderFunc func() (string, string)
@@ -71,13 +76,8 @@ func (tc *TestConfig) Run(ctx context.Context) (*Result, error) {
 		method = tc.Method
 	}
 
-	body := ""
-	if tc.Body != "" {
-		body = tc.Body
-	}
-
 	// Create request
-	req, err := http.NewRequestWithContext(ctx, method, tc.Path, strings.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, tc.Path, tc.Body)
 	if err != nil {
 		return nil, err
 	}
