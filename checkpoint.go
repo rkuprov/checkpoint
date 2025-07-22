@@ -18,7 +18,7 @@ type Result struct {
 
 // TestConfig holds the configuration for the Test function
 type TestConfig struct {
-	router      Router                                   // Required
+	Router      Router                                   // Required
 	RouteFunc   func(http.ResponseWriter, *http.Request) // Required
 	Path        string                                   // Required
 	Headers     map[string]string                        // Optional
@@ -104,8 +104,8 @@ func (tc *TestConfig) Run(ctx context.Context) (*Result, error) {
 	if tc.URLPattern != "" {
 		urlPattern = tc.URLPattern
 	}
-	tc.router.Handle(urlPattern, handler)
-	tc.router.ServeHTTP(rr, req)
+	tc.Router.Handle(urlPattern, handler)
+	tc.Router.ServeHTTP(rr, req)
 
 	// Extract response headers
 	responseHeaders := make(map[string]string)
@@ -128,10 +128,10 @@ func (tc *TestConfig) Run(ctx context.Context) (*Result, error) {
 	}, nil
 }
 
-// Init creates a new TestConfig with a given router
+// Init creates a new TestConfig with a given Router
 func Init(r Router) *TestConfig {
 	return &TestConfig{
-		router: r,
+		Router: r,
 	}
 }
 

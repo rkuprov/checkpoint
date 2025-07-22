@@ -25,6 +25,6 @@ func (g *RouterAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case *mux.Router:
 		m.ServeHTTP(w, r)
 	default:
-		http.Error(w, "Unsupported router type", http.StatusInternalServerError)
+		http.Error(w, "Unsupported Router type", http.StatusInternalServerError)
 	}
 }
